@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- ... (keep all existing head content) ... -->
+</head>
+<body>
+    <!-- ... (keep all existing body content) ... -->
+    
+    <script>
+        // ... (keep existing constants and variables) ...
+        
+        // Initialize Three.js scene
+        function initThreeScene() {
+            // ... (keep all existing scene setup code) ...
+            
+            // Create renderer - ADD XR MANAGER
+            const container = document.getElementById('vr-container');
+            renderer = new THREE.WebGLRenderer({ 
+                antialias: true,
+                alpha: true
+            });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.xr.enabled = true; // Enable WebXR
+            container.appendChild(renderer.domElement);
+            
+            // ADD XR SESSION MANAGEMENT
+            renderer.xr.addEventListener('sessionstart', () => {
+                isInVR = true;
+                vrBtn.innerHTML = '<i class="fas fa-vr-cardboard"></i> Exit VR';
+                vrInstruction.classList.remove('hidden');
+                setTimeout(() => vrInstruction.classList.add('hidden'), 5000);
+            });
+            
+            renderer.xr.addEventListener('sessionend', () => {
+                isInVR = false;
+                vrBtn.innerHTML = '<i class="fas fa-vr-cardboard"></i> Enter VR';
+            });
+            
+            // ... (keep rest of scene setup) ...
+        }
+        
+        // ... (keep all other functions) ...
+        
+        async function toggleVR() {
+            if (isInVR) {
+                // Exit VR
+                if (renderer.xr.getSession()) {
+                    await renderer.xr.getSession().end();
+                }
+            } else {
+                // Enter VR - FIXED SESSION INITIALIZATION
+                try {
+                    if (!navigator.xr) {
+                        throw new Error('WebXR not supported');
+                    }
+                    
+                    // Request VR session
+                    const sessionInit = { 
+                        optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'] 
+                    };
+                    
+                    const session = await navigator.xr.requestSession('immersive-vr', sessionInit);
+                    await renderer.xr.setSession(session);
+                } catch (err) {
+                    console.error('Error starting VR session', err);
+                    alert('Failed to start VR: ' + err.message);
+                }
+            }
+        }
+        
+        // MODIFIED ANIMATION LOOP FOR WEBXR
+        function animateScene() {
+            // Use proper animation loop for XR
+            if (renderer.xr.isPresenting) {
+                renderer.setAnimationLoop(renderLoop);
+            } else {
+                requestAnimationFrame(animateScene);
+                renderLoop();
+            }
+        }
+        
+        // NEW RENDER LOOP FUNCTION
+        function renderLoop() {
+            if (isRunning && trajectory.length > 0 && currentFrame < trajectory.length) {
+                const point = trajectory[currentFrame];
+                projectile.position.set(point.x, point.y, 0);
+                updateInfoPanel(currentFrame * TIME_STEP, point.y, point.x, 
+                              Math.sqrt(point.vx*point.vx + point.vy*point.vy));
+                currentFrame++;
+            }
+            
+            if (!isInVR) {
+                controls.update();
+            }
+            
+            renderer.render(scene, camera);
+        }
+        
+        // ... (keep all other code) ...
+        
+        // Initialization
+        window.addEventListener('load', function() {
+            initThreeScene();
+            updateValueDisplays();
+            updateResultsDisplay();
+            
+            // Check for WebXR support
+            if (!navigator.xr) {
+                vrBtn.disabled = true;
+                vrBtn.textContent = "WebXR not supported";
+            }
+            
+            // Start animation loop PROPERLY
+            animateScene();
+        });
+    </script>
+    
+    <!-- Font Awesome for icons -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+</body>
+</html>
