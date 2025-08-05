@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VR Projectile Motion Simulator for Meta Quest 3</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/VRButton.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FontLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/geometries/TextGeometry.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/objects/Sky.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* ... (existing styles remain unchanged) ... */
+    </style>
+</head>
+<body>
+    <!-- ... (existing HTML structure remains unchanged) ... -->
+
+    <script>
+        // Physics constants
+        const AIR_DENSITY = 1.2;
+        const DRAG_COEFFICIENT = 0.5;
+        const CROSS_SECTIONAL_AREA = 0.1;
+        const TIME_STEP = 0.02;
+        
+        // Simulation variables
+        let animationId = null;
+        let trajectory = [];
+        let isRunning = false;
+        let currentFrame = 0;
+        let vrSession = null;
+        
+        // Parameters with default values
+        let params = {
+            velocity: 25,
+            angle: 45,
+            height: 1.5,
+            airResistance: true,
+            gravity: 9.81,
+            wind: 0.0
+        };
+        
+        // Results
+        let results = {
+            maxHeight: 0,
+            distance: 0,
+            flightTime: 0,
+            impactSpeed: 0
+        };
+        
+        // DOM elements
+        const velocitySlider = document.getElementById('velocity');
+        const angleSlider = document.getElementById('angle');
+        const heightSlider = document.getElementById('height');
+        const airResToggle = document.getElementById('airRes');
+        const gravitySlider = document.getElementById('gravity');
+        const windSlider = document.getElementById('wind');
+        const runBtn = document.getElementById('runBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const vrBtn = document.getElementById('vrBtn');
+        const resetViewBtn = document.getElementById('resetViewBtn');
+        const vrInstruction = document.getElementById('vrInstruction');
+        
+        // Three.js variables
+        let scene, camera, renderer, controls;
+        let projectile, trajectoryLine, ground;
+        let isInVR = false;
+        let vrUIContainer, vrControllers = [];
+        let controller1, controller2;
+        let controllerGrip1, controllerGrip2;
+        let moveSpeed = 0.1;
+        let environmentGroup = new THREE.Group(); // Group for all environment objects
+        
+        // Initialize Three.js scene
+        function initThreeScene() {
+            // Create scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87CEEB); // Sky blue background
+            scene.fog = new THREE.Fog(0x87CEEB, 20, 100);
+            
+            // Add environment group to scene
+            scene.add(environmentGroup);
+            
+            // Create camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 5, 15);
+            
+            // Create renderer
+            const container = document.getElementById('vr-container');
+            renderer = new THREE.WebGLRenderer({ 
+                antialias: true,
+                alpha: true
+            });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.xr.enabled = true; // Enable WebXR
+            renderer.shadowMap.enabled = true;
+            container.appendChild(renderer.domElement);
+            
+            // Handle XR session events
+            renderer.xr.addEventListener('sessionstart', () => {
+                isInVR = true;
+                vrBtn.innerHTML = '<i class="fas fa-vr-cardboard"></i> Exit VR';
+                vrInstruction.classList.remove('hidden');
+                setTimeout(() => vrInstruction.classList.add('hidden'), 5000);
+                
+                // Create VR UI
+                createVRUI();
+                
+                // Setup controllers
+                setupControllers();
+            });
+            
+            renderer.xr.addEventListener('sessionend', () => {
+                isInVR = false;
+                vrBtn.innerHTML = '<i class="fas fa-vr-cardboard"></i> Enter VR';
+                
+                // Remove VR UI
+                if (vrUIContainer) {
+                    scene.remove(vrUIContainer);
+                }
+                
+                // Remove controllers
+                if (controller1) scene.remove(controller1);
+                if (controller2) scene.remove(controller2);
+                if (controllerGrip1) scene.remove(controllerGrip1);
+                if (controllerGrip2) scene.remove(controllerGrip2);
+            });
+            
+            // Add lighting
+            const ambientLight = new THREE.AmbientLight(0x404040);
+            scene.add(ambientLight);
+            
+            // Create orbit controls (for non-VR mode)
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.screenSpacePanning = false;
+            controls.minDistance = 5;
+            controls.maxDistance = 50;
+            controls.maxPolarAngle = Math.PI / 2 - 0.1;
+            
+            // Create ground with grass texture
+            const textureLoader = new THREE.TextureLoader();
+            const grassTexture = textureLoader.load('https://threejs.org/examples/textures/grass/grass.png');
+            grassTexture.wrapS = grassTexture.wrapT = THREE.RepeatWrapping;
+            grassTexture.repeat.set(50, 50);
+            
+            const groundGeometry = new THREE.PlaneGeometry(500, 500);
+            const groundMaterial = new THREE.MeshStandardMaterial({ 
+                map: grassTexture,
+                roughness: 0.9,
+                metalness: 0.1
+            });
+            ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            ground.position.y = 0;
+            ground.receiveShadow = true;
+            environmentGroup.add(ground);
+            
+            // Add sky
+            const sky = new THREE.Sky();
+            sky.scale.setScalar(10000);
+            environmentGroup.add(sky);
+
+            // Set up sky parameters for a daytime look
+            const skyUniforms = sky.material.uniforms;
+            skyUniforms['turbidity'].value = 10;
+            skyUniforms['rayleigh'].value = 2;
+            skyUniforms['mieCoefficient'].value = 0.005;
+            skyUniforms['mieDirectionalG'].value = 0.8;
+            
+            // Position the sun
+            const sun = new THREE.Vector3();
+            const theta = Math.PI * (0.49);
+            const phi = 2 * Math.PI * (0.25);
+            sun.setFromSphericalCoords(1, theta, phi);
+            skyUniforms['sunPosition'].value.copy(sun);
+            
+            // Add directional light from the sun
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.copy(sun);
+            directionalLight.castShadow = true;
+            scene.add(directionalLight);
+            
+            // Add trees around the environment
+            addEnvironmentElements();
+            
+            // Add grid helper (smaller grid near origin)
+            const gridHelper = new THREE.GridHelper(50, 50, 0xffffff, 0xffffff);
+            gridHelper.material.opacity = 0.2;
+            gridHelper.material.transparent = true;
+            environmentGroup.add(gridHelper);
+            
+            // Create projectile
+            const sphereGeometry = new THREE.SphereGeometry(0.3, 32, 32);
+            const sphereMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0xff8a00,
+                emissive: 0xff5500,
+                emissiveIntensity: 0.5,
+                metalness: 0.7,
+                roughness: 0.3
+            });
+            projectile = new THREE.Mesh(sphereGeometry, sphereMaterial);
+            projectile.castShadow = true;
+            scene.add(projectile);
+            
+            // Create trajectory line
+            const trajectoryGeometry = new THREE.BufferGeometry();
+            const trajectoryMaterial = new THREE.LineBasicMaterial({ 
+                color: 0x00c9ff,
+                linewidth: 2,
+                transparent: true,
+                opacity: 0.7
+            });
+            trajectoryLine = new THREE.Line(trajectoryGeometry, trajectoryMaterial);
+            scene.add(trajectoryLine);
+            
+            // Create launcher
+            createLauncher();
+            
+            // Position projectile at start
+            resetProjectilePosition();
+            
+            // Handle window resize
+            window.addEventListener('resize', onWindowResize);
+            
+            // Start animation loop
+            animateScene();
+        }
+        
+        function createLauncher() {
+            // Create launcher base
+            const baseGeometry = new THREE.CylinderGeometry(0.5, 0.5, 0.2, 32);
+            const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+            const base = new THREE.Mesh(baseGeometry, baseMaterial);
+            base.position.set(0, 0.1, 0);
+            environmentGroup.add(base);
+            
+            // Create launcher barrel
+            const barrelGeometry = new THREE.CylinderGeometry(0.1, 0.1, 2, 32);
+            const barrelMaterial = new THREE.MeshStandardMaterial({ color: 0x666666 });
+            const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
+            barrel.position.set(0, 1, 0);
+            barrel.rotation.z = -Math.PI / 2;
+            environmentGroup.add(barrel);
+            
+            // Create launcher stand
+            const standGeometry = new THREE.BoxGeometry(0.1, 1.8, 0.1);
+            const standMaterial = new THREE.MeshStandardMaterial({ color: 0x444444 });
+            const stand1 = new THREE.Mesh(standGeometry, standMaterial);
+            stand1.position.set(-0.3, 0.9, 0);
+            environmentGroup.add(stand1);
+            
+            const stand2 = new THREE.Mesh(standGeometry, standMaterial);
+            stand2.position.set(0.3, 0.9, 0);
+            environmentGroup.add(stand2);
+        }
+        
+        function addEnvironmentElements() {
+            // Create tree models
+            const treeGroup = new THREE.Group();
+            
+            // Tree trunk
+            const trunkGeometry = new THREE.CylinderGeometry(0.3, 0.4, 2, 8);
+            const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
+            const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+            trunk.position.y = 1;
+            trunk.castShadow = true;
+            trunk.receiveShadow = true;
+            treeGroup.add(trunk);
+            
+            // Tree leaves
+            const leavesGeometry = new THREE.ConeGeometry(1.5, 4, 8);
+            const leavesMaterial = new THREE.MeshStandardMaterial({ color: 0x228B22 });
+            const leaves = new THREE.Mesh(leavesGeometry, leavesMaterial);
+            leaves.position.y = 4;
+            leaves.castShadow = true;
+            leaves.receiveShadow = true;
+            treeGroup.add(leaves);
+            
+            // Position trees around the environment in a large area
+            const treePositions = [
+                { x: 30, z: 30 }, { x: -30, z: 30 }, { x: 30, z: -30 }, { x: -30, z: -30 },
+                { x: 50, z: 10 }, { x: -50, z: 10 }, { x: 10, z: 50 }, { x: 10, z: -50 },
+                { x: 40, z: 40 }, { x: -40, z: 40 }, { x: 40, z: -40 }, { x: -40, z: -40 },
+                { x: 20, z: 0 }, { x: -20, z: 0 }, { x: 0, z: 20 }, { x: 0, z: -20 }
+            ];
+            
+            for (let pos of treePositions) {
+                const tree = treeGroup.clone();
+                tree.position.set(pos.x, 0, pos.z);
+                environmentGroup.add(tree);
+            }
+        }
+        
+        function resetProjectilePosition() {
+            projectile.position.set(0, params.height, 0);
+            updateTrajectoryLine();
+        }
+        
+        function updateTrajectoryLine() {
+            const points = [];
+            
+            // Calculate trajectory points
+            const radians = params.angle * Math.PI / 180;
+            let vx = params.velocity * Math.cos(radians);
+            let vy = params.velocity * Math.sin(radians);
+            let x = 0;
+            let y = params.height;
+            
+            const k = params.airResistance ? 
+                0.5 * AIR_DENSITY * DRAG_COEFFICIENT * CROSS_SECTIONAL_AREA : 0;
+            
+            points.push(new THREE.Vector3(x, y, 0));
+            
+            while (y > 0) {
+                const speed = Math.sqrt(vx*vx + vy*vy);
+                const drag = k * speed * speed;
+                
+                const ax = -drag * (vx / speed) / 1.0 + params.wind;
+                const ay = -params.gravity - drag * (vy / speed) / 1.0;
+                
+                vx += ax * TIME_STEP;
+                vy += ay * TIME_STEP;
+                
+                x += vx * TIME_STEP;
+                y += vy * TIME_STEP;
+                
+                points.push(new THREE.Vector3(x, y, 0));
+                
+                if (points.length > 1000) break;
+            }
+            
+            // Update trajectory line
+            const trajectoryGeometry = new THREE.BufferGeometry().setFromPoints(points);
+            trajectoryLine.geometry = trajectoryGeometry;
+        }
+        
+        function onWindowResize() {
+            const container = document.getElementById('vr-container');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+        
+        function renderScene() {
+            if (isRunning && trajectory.length > 0 && currentFrame < trajectory.length) {
+                const point = trajectory[currentFrame];
+                projectile.position.set(point.x, point.y, 0);
+                
+                // Update info panel
+                const speed = Math.sqrt(point.vx*point.vx + point.vy*point.vy);
+                updateInfoPanel(currentFrame * TIME_STEP, point.y, point.x, speed);
+                
+                currentFrame++;
+            }
+            
+            if (!isInVR) {
+                controls.update();
+            }
+            
+            renderer.render(scene, camera);
+        }
+        
+        function animateScene() {
+            if (renderer.xr.isPresenting) {
+                // Use XR animation loop when in VR
+                renderer.setAnimationLoop(renderScene);
+            } else {
+                // Use regular animation loop when not in VR
+                requestAnimationFrame(animateScene);
+                renderScene();
+            }
+        }
+        
+        // Create full VR UI panel with parameter controls
+        function createVRUI() {
+            // Create container for VR UI
+            vrUIContainer = new THREE.Group();
+            scene.add(vrUIContainer);
+            
+            // Position UI in front of the camera at eye level
+            vrUIContainer.position.set(0, 1.6, -1.5);
+            
+            // Create panel background
+            const panelGeometry = new THREE.PlaneGeometry(3, 3.5);
+            const panelMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0x1a2a6c,
+                transparent: true,
+                opacity: 0.8,
+                side: THREE.DoubleSide
+            });
+            const panel = new THREE.Mesh(panelGeometry, panelMaterial);
+            vrUIContainer.add(panel);
+            
+            // Create title
+            const loader = new THREE.FontLoader();
+            loader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', function(font) {
+                const titleMaterial = new THREE.MeshBasicMaterial({ color: 0xff8a00 });
+                const titleGeo = new THREE.TextGeometry('VR Controls', {
+                    font: font,
+                    size: 0.15,
+                    height: 0.01
+                });
+                const title = new THREE.Mesh(titleGeo, titleMaterial);
+                title.position.set(-1, 1.2, 0.1);
+                vrUIContainer.add(title);
+                
+                // Create slider labels
+                const labelMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                
+                // Velocity
+                const velLabelGeo = new THREE.TextGeometry('Velocity: ' + params.velocity + ' m/s', {
+                    font: font,
+                    size: 0.08,
+                    height: 0.01
+                });
+                const velLabel = new THREE.Mesh(velLabelGeo, labelMaterial);
+                velLabel.position.set(-1.3, 0.7, 0.1);
+                velLabel.userData = { type: 'label', param: 'velocity' };
+                vrUIContainer.add(velLabel);
+                
+                // Velocity adjustment buttons
+                const velDown = createButton('-', -1.3, 0.5, 'velocity', -1);
+                const velUp = createButton('+', -0.7, 0.5, 'velocity', 1);
+                
+                // Angle
+                const angleLabelGeo = new THREE.TextGeometry('Angle: ' + params.angle + '°', {
+                    font: font,
+                    size: 0.08,
+                    height: 0.01
+                });
+                const angleLabel = new THREE.Mesh(angleLabelGeo, labelMaterial);
+                angleLabel.position.set(-1.3, 0.2, 0.1);
+                angleLabel.userData = { type: 'label', param: 'angle' };
+                vrUIContainer.add(angleLabel);
+                
+                // Angle adjustment buttons
+                const angleDown = createButton('-', -1.3, 0, 'angle', -1);
+                const angleUp = createButton('+', -0.7, 0, 'angle', 1);
+                
+                // Height
+                const heightLabelGeo = new THREE.TextGeometry('Height: ' + params.height + ' m', {
+                    font: font,
+                    size: 0.08,
+                    height: 0.01
+                });
+                const heightLabel = new THREE.Mesh(heightLabelGeo, labelMaterial);
+                heightLabel.position.set(-1.3, -0.3, 0.1);
+                heightLabel.userData = { type: 'label', param: 'height' };
+                vrUIContainer.add(heightLabel);
+                
+                // Height adjustment buttons
+                const heightDown = createButton('-', -1.3, -0.5, 'height', -0.5);
+                const heightUp = createButton('+', -0.7, -0.5, 'height', 0.5);
+                
+                // Gravity
+                const gravityLabelGeo = new THREE.TextGeometry('Gravity: ' + params.gravity.toFixed(2) + ' m/s²', {
+                    font: font,
+                    size: 0.08,
+                    height: 0.01
+                });
+                const gravityLabel = new THREE.Mesh(gravityLabelGeo, labelMaterial);
+                gravityLabel.position.set(-1.3, -0.8, 0.1);
+                gravityLabel.userData = { type: 'label', param: 'gravity' };
+                vrUIContainer.add(gravityLabel);
+                
+                // Gravity adjustment buttons
+                const gravityDown = createButton('-', -1.3, -1, 'gravity', -0.1);
+                const gravityUp = createButton('+', -0.7, -1, 'gravity', 0.1);
+                
+                // Wind
+                const windLabelGeo = new THREE.TextGeometry('Wind: ' + params.wind.toFixed(1) + ' m/s', {
+                    font: font,
+                    size: 0.08,
+                    height: 0.01
+                });
+                const windLabel = new THREE.Mesh(windLabelGeo, labelMaterial);
+                windLabel.position.set(-1.3, -1.3, 0.1);
+                windLabel.userData = { type: 'label', param: 'wind' };
+                vrUIContainer.add(windLabel);
+                
+                // Wind adjustment buttons
+                const windDown = createButton('-', -1.3, -1.5, 'wind', -0.5);
+                const windUp = createButton('+', -0.7, -1.5, 'wind', 0.5);
+                
+                // Air resistance
+                const airResLabelGeo = new THREE.TextGeometry('Air Resistance: ' + (params.airResistance ? 'On' : 'Off'), {
+                    font: font,
+                    size: 0.08,
+                    height: 0.01
+                });
+                const airResLabel = new THREE.Mesh(airResLabelGeo, labelMaterial);
+                airResLabel.position.set(-1.3, -1.8, 0.1);
+                airResLabel.userData = { type: 'label', param: 'airRes' };
+                vrUIContainer.add(airResLabel);
+                
+                // Air resistance toggle button
+                const airResButton = createButton('Toggle', -0.7, -1.8, 'airResToggle');
+                
+                // Create buttons
+                const buttonGeometry = new THREE.BoxGeometry(0.8, 0.2, 0.05);
+                const buttonMaterial = new THREE.MeshBasicMaterial({ color: 0xff8a00 });
+                
+                // Launch button
+                const launchButton = new THREE.Mesh(buttonGeometry, buttonMaterial);
+                launchButton.position.set(0.8, -1.6, 0.05);
+                launchButton.userData = { action: 'launch' };
+                vrUIContainer.add(launchButton);
+                
+                // Reset button
+                const resetButton = new THREE.Mesh(buttonGeometry, buttonMaterial);
+                resetButton.position.set(0.8, -1.9, 0.05);
+                resetButton.userData = { action: 'reset' };
+                vrUIContainer.add(resetButton);
+                
+                // Add button labels
+                const launchTextGeo = new THREE.TextGeometry('Launch', {
+                    font: font,
+                    size: 0.07,
+                    height: 0.01
+                });
+                const launchText = new THREE.Mesh(launchTextGeo, labelMaterial);
+                launchText.position.set(0.4, -1.62, 0.1);
+                vrUIContainer.add(launchText);
+                
+                const resetTextGeo = new THREE.TextGeometry('Reset', {
+                    font: font,
+                    size: 0.07,
+                    height: 0.01
+                });
+                const resetText = new THREE.Mesh(resetTextGeo, labelMaterial);
+                resetText.position.set(0.45, -1.92, 0.1);
+                vrUIContainer.add(resetText);
+            });
+        }
+        
+        // Helper function to create adjustment buttons
+        function createButton(label, x, y, param, step = 0) {
+            const loader = new THREE.FontLoader();
+            const buttonGeometry = new THREE.BoxGeometry(0.4, 0.15, 0.05);
+            const buttonMaterial = new THREE.MeshBasicMaterial({ color: 0xff8a00 });
+            const button = new THREE.Mesh(buttonGeometry, buttonMaterial);
+            button.position.set(x, y, 0.05);
+            button.userData = { param: param, step: step };
+            vrUIContainer.add(button);
+            
+            // Button label
+            loader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', function(font) {
+                const labelMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                const textGeo = new THREE.TextGeometry(label, {
+                    font: font,
+                    size: 0.07,
+                    height: 0.01
+                });
+                const text = new THREE.Mesh(textGeo, labelMaterial);
+                text.position.set(x - 0.1, y - 0.05, 0.1);
+                vrUIContainer.add(text);
+            });
+            
+            return button;
+        }
+        
+        // Update VR UI labels
+        function updateVRUI() {
+            if (!vrUIContainer) return;
+            
+            vrUIContainer.children.forEach(child => {
+                if (child.userData && child.userData.type === 'label') {
+                    const param = child.userData.param;
+                    let text = '';
+                    
+                    switch(param) {
+                        case 'velocity':
+                            text = 'Velocity: ' + params.velocity + ' m/s';
+                            break;
+                        case 'angle':
+                            text = 'Angle: ' + params.angle + '°';
+                            break;
+                        case 'height':
+                            text = 'Height: ' + params.height + ' m';
+                            break;
+                        case 'gravity':
+                            text = 'Gravity: ' + params.gravity.toFixed(2) + ' m/s²';
+                            break;
+                        case 'wind':
+                            text = 'Wind: ' + params.wind.toFixed(1) + ' m/s';
+                            break;
+                        case 'airRes':
+                            text = 'Air Resistance: ' + (params.airResistance ? 'On' : 'Off');
+                            break;
+                    }
+                    
+                    // Update geometry with new text
+                    const loader = new THREE.FontLoader();
+                    loader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', function(font) {
+                        const geometry = new THREE.TextGeometry(text, {
+                            font: font,
+                            size: 0.08,
+                            height: 0.01
+                        });
+                        child.geometry = geometry;
+                    });
+                }
+            });
+        }
+        
+        // Setup VR controllers
+        function setupControllers() {
+            // Create controller models
+            controller1 = renderer.xr.getController(0);
+            scene.add(controller1);
+            
+            controller2 = renderer.xr.getController(1);
+            scene.add(controller2);
+            
+            // Create controller grips
+            controllerGrip1 = renderer.xr.getControllerGrip(0);
+            controllerGrip2 = renderer.xr.getControllerGrip(1);
+            scene.add(controllerGrip1);
+            scene.add(controllerGrip2);
+            
+            // Create controller lines
+            const controllerLineGeometry = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(0, 0, 0),
+                new THREE.Vector3(0, 0, -1)
+            ]);
+            
+            const controllerLineMaterial = new THREE.LineBasicMaterial({
+                color: 0xffffff,
+                linewidth: 2,
+                transparent: true,
+                opacity: 0.8
+            });
+            
+            const line1 = new THREE.Line(controllerLineGeometry, controllerLineMaterial);
+            line1.scale.z = 5;
+            controller1.add(line1);
+            
+            const line2 = new THREE.Line(controllerLineGeometry, controllerLineMaterial);
+            line2.scale.z = 5;
+            controller2.add(line2);
+            
+            // Add select event listeners
+            controller1.addEventListener('selectstart', onSelectStart);
+            controller1.addEventListener('selectend', onSelectEnd);
+            
+            controller2.addEventListener('selectstart', onSelectStart);
+            controller2.addEventListener('selectend', onSelectEnd);
+            
+            // Add movement controls
+            controller1.addEventListener('thumbstickchange', onThumbstickChange);
+            controller2.addEventListener('thumbstickchange', onThumbstickChange);
+            
+            vrControllers = [controller1, controller2];
+        }
+        
+        // Improved VR movement system
+        function onThumbstickChange(event) {
+            if (!isInVR) return;
+            
+            const controller = event.target;
+            const xAxis = event.axis[0];
+            const yAxis = event.axis[1];
+            
+            // Only move if thumbstick is pushed significantly
+            if (Math.abs(xAxis) > 0.1 || Math.abs(yAxis) > 0.1) {
+                // Get camera forward direction (without vertical component)
+                const forward = new THREE.Vector3();
+                camera.getWorldDirection(forward);
+                forward.y = 0;
+                forward.normalize();
+                
+                // Get camera right direction
+                const right = new THREE.Vector3();
+                right.crossVectors(new THREE.Vector3(0, 1, 0), forward);
+                right.normalize();
+                
+                // Calculate movement direction
+                const moveDirection = new THREE.Vector3();
+                moveDirection.addScaledVector(forward, -yAxis * moveSpeed);
+                moveDirection.addScaledVector(right, xAxis * moveSpeed);
+                
+                // Move camera (player) in VR space
+                camera.position.add(moveDirection);
+            }
+        }
+        
+        function onSelectStart(event) {
+            const controller = event.target;
+            
+            // Create a raycaster to detect UI elements
+            const tempMatrix = new THREE.Matrix4();
+            tempMatrix.identity().extractRotation(controller.matrixWorld);
+            
+            const raycaster = new THREE.Raycaster();
+            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+            
+            // Check for intersections with UI elements
+            const intersects = raycaster.intersectObjects(vrUIContainer.children);
+            
+            if (intersects.length > 0) {
+                const object = intersects[0].object;
+                
+                // Handle button press
+                if (object.userData && object.userData.action === 'launch') {
+                    runSimulation();
+                    object.material.color.set(0x00ff00); // Green feedback
+                } else if (object.userData && object.userData.action === 'reset') {
+                    resetSimulation();
+                    object.material.color.set(0x00ff00); // Green feedback
+                } 
+                // Handle parameter adjustment buttons
+                else if (object.userData && object.userData.param) {
+                    const param = object.userData.param;
+                    const step = object.userData.step || 0;
+                    
+                    // Toggle air resistance
+                    if (param === 'airResToggle') {
+                        params.airResistance = !params.airResistance;
+                        airResToggle.checked = params.airResistance;
+                        updateValueDisplays();
+                        updateTrajectoryLine();
+                        object.material.color.set(0x00ff00); // Green feedback
+                    } 
+                    // Adjust numerical parameters
+                    else {
+                        switch(param) {
+                            case 'velocity':
+                                params.velocity = Math.max(5, Math.min(50, params.velocity + step));
+                                velocitySlider.value = params.velocity;
+                                break;
+                            case 'angle':
+                                params.angle = Math.max(0, Math.min(90, params.angle + step));
+                                angleSlider.value = params.angle;
+                                break;
+                            case 'height':
+                                params.height = Math.max(0, Math.min(50, params.height + step));
+                                heightSlider.value = params.height;
+                                break;
+                            case 'gravity':
+                                params.gravity = Math.max(1, Math.min(20, params.gravity + step));
+                                gravitySlider.value = params.gravity;
+                                break;
+                            case 'wind':
+                                params.wind = Math.max(-10, Math.min(10, params.wind + step));
+                                windSlider.value = params.wind;
+                                break;
+                        }
+                        updateValueDisplays();
+                        updateTrajectoryLine();
+                        object.material.color.set(0x00ff00); // Green feedback
+                    }
+                }
+            }
+        }
+        
+        function onSelectEnd(event) {
+            // Reset button colors
+            if (vrUIContainer) {
+                vrUIContainer.children.forEach(child => {
+                    if (child.material && child.material.color) {
+                        child.material.color.set(0xff8a00);
+                    }
+                });
+            }
+        }
+        
+        // Calculate trajectory
+        function calculateTrajectory() {
+            const trajectoryPoints = [];
+            let maxHeight = 0;
+            
+            // Initial conditions
+            const radians = params.angle * Math.PI / 180;
+            let vx = params.velocity * Math.cos(radians);
+            let vy = params.velocity * Math.sin(radians);
+            let x = 0;
+            let y = params.height;
+            
+            // Calculate drag coefficient
+            const k = params.airResistance ? 
+                0.5 * AIR_DENSITY * DRAG_COEFFICIENT * CROSS_SECTIONAL_AREA : 0;
+            
+            // Store initial point
+            trajectoryPoints.push({x, y, vx, vy});
+            
+            // Simulate until hitting the ground
+            while (y > 0) {
+                // Calculate drag force
+                const speed = Math.sqrt(vx*vx + vy*vy);
+                const drag = k * speed * speed;
+                
+                // Calculate acceleration (F = ma)
+                const ax = -drag * (vx / speed) / 1.0 + params.wind;
+                const ay = -params.gravity - drag * (vy / speed) / 1.0;
+                
+                // Update velocity
+                vx += ax * TIME_STEP;
+                vy += ay * TIME_STEP;
+                
+                // Update position
+                x += vx * TIME_STEP;
+                y += vy * TIME_STEP;
+                
+                // Track max height
+                if (y > maxHeight) maxHeight = y;
+                
+                // Store point
+                trajectoryPoints.push({x, y, vx, vy});
+                
+                // Safety break
+                if (trajectoryPoints.length > 1000) break;
+            }
+            
+            return {points: trajectoryPoints, maxHeight};
+        }
+        
+        // Update value displays
+        function updateValueDisplays() {
+            document.getElementById('velValue').textContent = params.velocity + ' m/s';
+            document.getElementById('angleValue').textContent = params.angle + '°';
+            document.getElementById('heightValue').textContent = params.height + ' m';
+            document.getElementById('gravityValue').textContent = params.gravity.toFixed(2) + ' m/s²';
+            document.getElementById('windValue').textContent = params.wind.toFixed(1) + ' m/s';
+            
+            // Update VR UI if in VR
+            if (isInVR) {
+                updateVRUI();
+            }
+        }
+        
+        // Update results display
+        function updateResultsDisplay() {
+            document.getElementById('maxHeight').textContent = results.maxHeight.toFixed(1) + ' m';
+            document.getElementById('distance').textContent = results.distance.toFixed(1) + ' m';
+            document.getElementById('flightTime').textContent = results.flightTime.toFixed(1) + ' s';
+            document.getElementById('impactSpeed').textContent = results.impactSpeed.toFixed(1) + ' m/s';
+        }
+        
+        // Update info panel
+        function updateInfoPanel(time, height, distance, speed) {
+            document.getElementById('infoTime').textContent = time.toFixed(1) + 's';
+            document.getElementById('infoHeight').textContent = height.toFixed(1) + 'm';
+            document.getElementById('infoDistance').textContent = distance.toFixed(1) + 'm';
+            document.getElementById('infoSpeed').textContent = speed.toFixed(1) + 'm/s';
+        }
+        
+        // Run simulation
+        function runSimulation() {
+            if (isRunning) return;
+            
+            // Update parameters
+            params.velocity = parseInt(velocitySlider.value);
+            params.angle = parseInt(angleSlider.value);
+            params.height = parseFloat(heightSlider.value);
+            params.airResistance = airResToggle.checked;
+            params.gravity = parseFloat(gravitySlider.value);
+            params.wind = parseFloat(windSlider.value);
+            
+            // Update displays
+            updateValueDisplays();
+            updateTrajectoryLine();
+            
+            // Reset results
+            results.maxHeight = 0;
+            results.distance = 0;
+            results.flightTime = 0;
+            results.impactSpeed = 0;
+            
+            // Calculate trajectory
+            const trajectoryData = calculateTrajectory();
+            trajectory = trajectoryData.points;
+            
+            // Set initial state
+            currentFrame = 0;
+            isRunning = true;
+            runBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Running...';
+            
+            // Update results with final values
+            if (trajectory.length > 0) {
+                const lastPoint = trajectory[trajectory.length - 1];
+                results.distance = lastPoint.x;
+                results.impactSpeed = Math.sqrt(lastPoint.vx*lastPoint.vx + lastPoint.vy*lastPoint.vy);
+                results.flightTime = trajectory.length * TIME_STEP;
+                results.maxHeight = trajectoryData.maxHeight;
+            }
+            
+            updateResultsDisplay();
+        }
+        
+        // Reset parameters
+        function resetSimulation() {
+            // Reset parameters to defaults
+            params = {
+                velocity: 25,
+                angle: 45,
+                height: 1.5,
+                airResistance: true,
+                gravity: 9.81,
+                wind: 0.0
+            };
+            
+            // Reset UI controls
+            velocitySlider.value = params.velocity;
+            angleSlider.value = params.angle;
+            heightSlider.value = params.height;
+            airResToggle.checked = params.airResistance;
+            gravitySlider.value = params.gravity;
+            windSlider.value = params.wind;
+            
+            // Reset simulation state
+            trajectory = [];
+            isRunning = false;
+            currentFrame = 0;
+            runBtn.innerHTML = '<i class="fas fa-play"></i> Launch Projectile';
+            
+            // Reset projectile position
+            resetProjectilePosition();
+            
+            // Reset info panel
+            document.getElementById('infoTime').textContent = '0.0s';
+            document.getElementById('infoHeight').textContent = '0.0m';
+            document.getElementById('infoDistance').textContent = '0.0m';
+            document.getElementById('infoSpeed').textContent = '0.0m/s';
+            
+            // Update displays
+            updateValueDisplays();
+            updateResultsDisplay();
+        }
+        
+        async function toggleVR() {
+            if (isInVR) {
+                // Exit VR
+                if (vrSession) {
+                    await vrSession.end();
+                }
+            } else {
+                // Enter VR
+                try {
+                    // Request VR session
+                    const sessionInit = { 
+                        optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'] 
+                    };
+                    
+                    vrSession = await navigator.xr.requestSession('immersive-vr', sessionInit);
+                    await renderer.xr.setSession(vrSession);
+                    
+                    // Handle session end
+                    vrSession.addEventListener('end', () => {
+                        vrSession = null;
+                        isInVR = false;
+                        vrBtn.innerHTML = '<i class="fas fa-vr-cardboard"></i> Enter VR';
+                    });
+                } catch (err) {
+                    console.error('Error starting VR session', err);
+                    alert('Failed to start VR: ' + err.message);
+                }
+            }
+        }
+        
+        function resetView() {
+            camera.position.set(0, 5, 15);
+            camera.lookAt(0, 0, 0);
+        }
+        
+        // Event listeners
+        runBtn.addEventListener('click', runSimulation);
+        resetBtn.addEventListener('click', resetSimulation);
+        resetViewBtn.addEventListener('click', resetView);
+        
+        vrBtn.addEventListener('click', toggleVR);
+        
+        // Input event listeners
+        velocitySlider.addEventListener('input', function() {
+            params.velocity = parseInt(this.value);
+            updateValueDisplays();
+            updateTrajectoryLine();
+        });
+        
+        angleSlider.addEventListener('input', function() {
+            params.angle = parseInt(this.value);
+            updateValueDisplays();
+            updateTrajectoryLine();
+        });
+        
+        heightSlider.addEventListener('input', function() {
+            params.height = parseFloat(this.value);
+            updateValueDisplays();
+            updateTrajectoryLine();
+        });
+        
+        gravitySlider.addEventListener('input', function() {
+            params.gravity = parseFloat(this.value);
+            updateValueDisplays();
+            updateTrajectoryLine();
+        });
+        
+        windSlider.addEventListener('input', function() {
+            params.wind = parseFloat(this.value);
+            updateValueDisplays();
+            updateTrajectoryLine();
+        });
+        
+        airResToggle.addEventListener('change', function() {
+            params.airResistance = this.checked;
+            updateValueDisplays();
+            updateTrajectoryLine();
+        });
+        
+        // Initialization
+        window.addEventListener('load', function() {
+            initThreeScene();
+            updateValueDisplays();
+            updateResultsDisplay();
+            
+            // Check for WebXR support
+            if (!navigator.xr) {
+                vrBtn.disabled = true;
+                vrBtn.textContent = "WebXR not supported";
+            }
+            
+            // Check for Meta Quest
+            if (/Quest/.test(navigator.userAgent)) {
+                vrInstruction.innerHTML = "<h3>Welcome to Meta Quest 3!</h3><p>Use thumbstick to move around</p><p>Point and click on UI elements</p><p>Press trigger to launch projectile</p>";
+            }
+        });
+    </script>
+    
+    <!-- Font Awesome for icons -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+</body>
+</html>
