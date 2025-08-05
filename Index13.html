@@ -1,0 +1,1541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VR Projectile Motion Simulator for Meta Quest 3</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/VRButton.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FontLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/geometries/TextGeometry.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #1a2a6c, #b21f1f);
+            color: #fff;
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            overflow-x: hidden;
+        }
+        
+        .container {
+            max-width: 1200px;
+            width: 100%;
+        }
+        
+        header {
+            text-align: center;
+            padding: 20px 0;
+            margin-bottom: 20px;
+        }
+        
+        h1 {
+            font-size: 2.8rem;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            background: linear-gradient(to right, #ff8a00, #da1b60);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .subtitle {
+            font-size: 1.2rem;
+            max-width: 600px;
+            margin: 0 auto;
+            opacity: 0.9;
+        }
+        
+        .device-notice {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 15px;
+            margin: 15px 0;
+            text-align: center;
+        }
+        
+        .simulation-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+        
+        .canvas-wrapper {
+            flex: 1;
+            min-width: 300px;
+            background: rgba(0, 0, 30, 0.8);
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 10px 35px rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            height: 500px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        #vr-container {
+            width: 100%;
+            height: 100%;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        
+        .controls {
+            flex: 1;
+            min-width: 300px;
+            background: rgba(0, 0, 30, 0.8);
+            border-radius: 16px;
+            padding: 25px;
+            box-shadow: 0 10px 35px rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+        
+        .control-group {
+            margin-bottom: 25px;
+        }
+        
+        .control-title {
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+            color: #ff8a00;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .control-title i {
+            font-size: 1.8rem;
+        }
+        
+        .slider-container {
+            margin-bottom: 18px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 500;
+            display: flex;
+            justify-content: space-between;
+            font-size: 1.1rem;
+        }
+        
+        .value-display {
+            font-weight: bold;
+            color: #ff8a00;
+            min-width: 80px;
+            text-align: right;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            height: 12px;
+            background: linear-gradient(to right, #1a2a6c, #b21f1f);
+            border-radius: 6px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background: #ff8a00;
+            cursor: pointer;
+            box-shadow: 0 0 15px rgba(255, 138, 0, 0.8);
+            transition: all 0.2s ease;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb:active {
+            transform: scale(1.2);
+        }
+        
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 18px;
+            padding: 10px 0;
+        }
+        
+        .toggle-label {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 500;
+            font-size: 1.1rem;
+        }
+        
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 65px;
+            height: 32px;
+        }
+        
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #1a2a6c;
+            transition: .4s;
+            border-radius: 34px;
+        }
+        
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 24px;
+            width: 24px;
+            left: 4px;
+            bottom: 4px;
+            background: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        
+        input:checked + .slider {
+            background: #ff8a00;
+        }
+        
+        input:checked + .slider:before {
+            transform: translateX(32px);
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 18px;
+            margin-top: 25px;
+        }
+        
+        button {
+            flex: 1;
+            padding: 16px;
+            border: none;
+            border-radius: 14px;
+            font-size: 1.2rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: linear-gradient(to right, #ff8a00, #da1b60);
+            color: white;
+            box-shadow: 0 6px 20px rgba(218, 27, 96, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        
+        button:active {
+            transform: translateY(4px);
+            box-shadow: 0 3px 10px rgba(218, 27, 96, 0.3);
+        }
+        
+        #resetBtn {
+            background: linear-gradient(to right, #1a2a6c, #4a00e0);
+            box-shadow: 0 6px 20px rgba(26, 42, 108, 0.4);
+        }
+        
+        #vrBtn {
+            background: linear-gradient(to right, #00c9ff, #92fe9d);
+            color: #000;
+            box-shadow: 0 6px 20px rgba(0, 201, 255, 0.4);
+        }
+        
+        .results {
+            background: rgba(0, 0, 30, 0.8);
+            border-radius: 16px;
+            padding: 25px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 35px rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+        
+        .results h2 {
+            font-size: 1.8rem;
+            margin-bottom: 20px;
+            color: #ff8a00;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+        }
+        
+        .result-card {
+            background: rgba(26, 42, 108, 0.5);
+            padding: 20px;
+            border-radius: 14px;
+            text-align: center;
+            transition: transform 0.3s ease;
+        }
+        
+        .result-card:hover {
+            transform: translateY(-5px);
+            background: rgba(26, 42, 108, 0.7);
+        }
+        
+        .result-value {
+            font-size: 2.4rem;
+            font-weight: 700;
+            margin: 10px 0;
+            color: #ff8a00;
+        }
+        
+        .result-label {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .info-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 5, 25, 0.9);
+            border-radius: 14px;
+            padding: 18px;
+            width: 250px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
+            z-index: 10;
+        }
+        
+        .info-title {
+            color: #ff8a00;
+            font-size: 1.3rem;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+        }
+        
+        .info-label {
+            color: #a0a0ff;
+        }
+        
+        .info-value {
+            font-weight: 600;
+            color: #ff8a00;
+        }
+        
+        .vr-controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            display: flex;
+            gap: 10px;
+            z-index: 20;
+        }
+        
+        .vr-controls button {
+            padding: 10px 15px;
+            font-size: 0.9rem;
+        }
+        
+        .vr-instruction {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            z-index: 15;
+            max-width: 80%;
+        }
+        
+        .vr-instruction.hidden {
+            display: none;
+        }
+        
+        footer {
+            text-align: center;
+            padding: 20px;
+            opacity: 0.8;
+            font-size: 1rem;
+            margin-top: 20px;
+        }
+        
+        /* Meta Quest browser detection */
+        @media (hover: none) and (pointer: coarse) {
+            .device-notice {
+                display: block;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .simulation-container {
+                flex-direction: column;
+            }
+            
+            h1 {
+                font-size: 2.3rem;
+            }
+            
+            .control-title {
+                font-size: 1.3rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>VR Projectile Motion Simulator</h1>
+            <p class="subtitle">Immersive 3D Experience for Meta Quest 3</p>
+            
+            <div class="device-notice">
+                <i class="fas fa-vr-cardboard"></i>
+                <p>Put on your Meta Quest 3 headset for the full VR experience!</p>
+            </div>
+        </header>
+        
+        <div class="simulation-container">
+            <div class="canvas-wrapper">
+                <div class="info-panel">
+                    <div class="info-title">
+                        <i class="fas fa-rocket"></i>
+                        <span>Flight Data</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Time:</span>
+                        <span class="info-value" id="infoTime">0.0s</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Height:</span>
+                        <span class="info-value" id="infoHeight">0.0m</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Distance:</span>
+                        <span class="info-value" id="infoDistance">0.0m</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Speed:</span>
+                        <span class="info-value" id="infoSpeed">0.0m/s</span>
+                    </div>
+                </div>
+                
+                <div id="vr-container"></div>
+                
+                <div class="vr-controls">
+                    <button id="vrBtn">
+                        <i class="fas fa-vr-cardboard"></i>
+                        Enter VR
+                    </button>
+                    <button id="resetViewBtn">
+                        <i class="fas fa-sync"></i>
+                        Reset View
+                    </button>
+                </div>
+                
+                <div class="vr-instruction hidden" id="vrInstruction">
+                    <h3>Welcome to VR Mode!</h3>
+                    <p>Use thumbstick to move around</p>
+                    <p>Point and click on UI elements</p>
+                    <p>Press trigger to launch projectile</p>
+                </div>
+            </div>
+            
+            <div class="controls">
+                <div class="control-group">
+                    <h3 class="control-title">
+                        <i class="fas fa-sliders-h"></i>
+                        <span>Launch Parameters</span>
+                    </h3>
+                    
+                    <div class="slider-container">
+                        <label>
+                            <span>Velocity</span>
+                            <span class="value-display" id="velValue">25 m/s</span>
+                        </label>
+                        <input type="range" id="velocity" min="5" max="50" value="25" step="1">
+                    </div>
+                    
+                    <div class="slider-container">
+                        <label>
+                            <span>Angle</span>
+                            <span class="value-display" id="angleValue">45°</span>
+                        </label>
+                        <input type="range" id="angle" min="0" max="90" value="45" step="1">
+                    </div>
+                    
+                    <div class="slider-container">
+                        <label>
+                            <span>Height</span>
+                            <span class="value-display" id="heightValue">1.5 m</span>
+                        </label>
+                        <input type="range" id="height" min="0" max="50" value="1.5" step="0.5">
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <h3 class="control-title">
+                        <i class="fas fa-wind"></i>
+                        <span>Environment Settings</span>
+                    </h3>
+                    
+                    <div class="toggle-container">
+                        <div class="toggle-label">
+                            <i class="fas fa-fan"></i>
+                            <span>Air Resistance</span>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="airRes" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    
+                    <div class="slider-container">
+                        <label>
+                            <span>Gravity</span>
+                            <span class="value-display" id="gravityValue">9.81 m/s²</span>
+                        </label>
+                        <input type="range" id="gravity" min="1" max="20" value="9.81" step="0.1">
+                    </div>
+                    
+                    <div class="slider-container">
+                        <label>
+                            <span>Wind</span>
+                            <span class="value-display" id="windValue">0.0 m/s</span>
+                        </label>
+                        <input type="range" id="wind" min="-10" max="10" value="0" step="0.5">
+                    </div>
+                </div>
+                
+                <div class="button-group">
+                    <button id="runBtn">
+                        <i class="fas fa-play"></i>
+                        Launch Projectile
+                    </button>
+                    <button id="resetBtn">
+                        <i class="fas fa-redo"></i>
+                        Reset
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="results">
+            <h2>
+                <i class="fas fa-chart-line"></i>
+                <span>Simulation Results</span>
+            </h2>
+            <div class="results-grid">
+                <div class="result-card">
+                    <div class="result-value" id="maxHeight">0.0 m</div>
+                    <div class="result-label">Max Height</div>
+                </div>
+                <div class="result-card">
+                    <div class="result-value" id="distance">0.0 m</div>
+                    <div class="result-label">Distance</div>
+                </div>
+                <div class="result-card">
+                    <div class="result-value" id="flightTime">0.0 s</div>
+                    <div class="result-label">Flight Time</div>
+                </div>
+                <div class="result-card">
+                    <div class="result-value" id="impactSpeed">0.0 m/s</div>
+                    <div class="result-label">Impact Speed</div>
+                </div>
+            </div>
+        </div>
+        
+        <footer>
+            <p>VR Projectile Motion Simulator | Optimized for Meta Quest 3</p>
+        </footer>
+    </div>
+
+    <script>
+        // Physics constants
+        const AIR_DENSITY = 1.2;
+        const DRAG_COEFFICIENT = 0.5;
+        const CROSS_SECTIONAL_AREA = 0.1;
+        const TIME_STEP = 0.02;
+        
+        // Simulation variables
+        let animationId = null;
+        let trajectory = [];
+        let isRunning = false;
+        let currentFrame = 0;
+        let vrSession = null;
+        
+        // Parameters with default values
+        let params = {
+            velocity: 25,
+            angle: 45,
+            height: 1.5,
+            airResistance: true,
+            gravity: 9.81,
+            wind: 0.0
+        };
+        
+        // Results
+        let results = {
+            maxHeight: 0,
+            distance: 0,
+            flightTime: 0,
+            impactSpeed: 0
+        };
+        
+        // DOM elements
+        const velocitySlider = document.getElementById('velocity');
+        const angleSlider = document.getElementById('angle');
+        const heightSlider = document.getElementById('height');
+        const airResToggle = document.getElementById('airRes');
+        const gravitySlider = document.getElementById('gravity');
+        const windSlider = document.getElementById('wind');
+        const runBtn = document.getElementById('runBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const vrBtn = document.getElementById('vrBtn');
+        const resetViewBtn = document.getElementById('resetViewBtn');
+        const vrInstruction = document.getElementById('vrInstruction');
+        
+        // Three.js variables
+        let scene, camera, renderer, controls;
+        let projectile, trajectoryLine, ground;
+        let isInVR = false;
+        let vrUIContainer, vrControllers = [];
+        let controller1, controller2;
+        let controllerGrip1, controllerGrip2;
+        let moveSpeed = 0.1;
+        
+        // Initialize Three.js scene
+        function initThreeScene() {
+            // Create scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0c1229);
+            scene.fog = new THREE.Fog(0x0c1229, 20, 100);
+            
+            // Create camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 5, 15);
+            
+            // Create renderer
+            const container = document.getElementById('vr-container');
+            renderer = new THREE.WebGLRenderer({ 
+                antialias: true,
+                alpha: true
+            });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.xr.enabled = true; // Enable WebXR
+            container.appendChild(renderer.domElement);
+            
+            // Handle XR session events
+            renderer.xr.addEventListener('sessionstart', () => {
+                isInVR = true;
+                vrBtn.innerHTML = '<i class="fas fa-vr-cardboard"></i> Exit VR';
+                vrInstruction.classList.remove('hidden');
+                setTimeout(() => vrInstruction.classList.add('hidden'), 5000);
+                
+                // Create VR UI
+                createVRUI();
+                
+                // Setup controllers
+                setupControllers();
+            });
+            
+            renderer.xr.addEventListener('sessionend', () => {
+                isInVR = false;
+                vrBtn.innerHTML = '<i class="fas fa-vr-cardboard"></i> Enter VR';
+                
+                // Remove VR UI
+                if (vrUIContainer) {
+                    scene.remove(vrUIContainer);
+                }
+                
+                // Remove controllers
+                if (controller1) scene.remove(controller1);
+                if (controller2) scene.remove(controller2);
+                if (controllerGrip1) scene.remove(controllerGrip1);
+                if (controllerGrip2) scene.remove(controllerGrip2);
+            });
+            
+            // Add lighting
+            const ambientLight = new THREE.AmbientLight(0x404040);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(5, 10, 7);
+            directionalLight.castShadow = true;
+            scene.add(directionalLight);
+            
+            // Create orbit controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.screenSpacePanning = false;
+            controls.minDistance = 5;
+            controls.maxDistance = 50;
+            controls.maxPolarAngle = Math.PI / 2 - 0.1;
+            
+            // Create ground
+            const groundGeometry = new THREE.PlaneGeometry(100, 100);
+            const groundMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0x8B4513,
+                roughness: 0.9,
+                metalness: 0.1
+            });
+            ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            ground.position.y = 0;
+            ground.receiveShadow = true;
+            scene.add(ground);
+            
+            // Add grid helper
+            const gridHelper = new THREE.GridHelper(100, 20, 0xffffff, 0xffffff);
+            gridHelper.material.opacity = 0.2;
+            gridHelper.material.transparent = true;
+            scene.add(gridHelper);
+            
+            // Create projectile
+            const sphereGeometry = new THREE.SphereGeometry(0.3, 32, 32);
+            const sphereMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0xff8a00,
+                emissive: 0xff5500,
+                emissiveIntensity: 0.5,
+                metalness: 0.7,
+                roughness: 0.3
+            });
+            projectile = new THREE.Mesh(sphereGeometry, sphereMaterial);
+            projectile.castShadow = true;
+            scene.add(projectile);
+            
+            // Create trajectory line
+            const trajectoryGeometry = new THREE.BufferGeometry();
+            const trajectoryMaterial = new THREE.LineBasicMaterial({ 
+                color: 0x00c9ff,
+                linewidth: 2,
+                transparent: true,
+                opacity: 0.7
+            });
+            trajectoryLine = new THREE.Line(trajectoryGeometry, trajectoryMaterial);
+            scene.add(trajectoryLine);
+            
+            // Create launcher
+            createLauncher();
+            
+            // Add sky
+            const skyGeometry = new THREE.SphereGeometry(80, 32, 32);
+            const skyMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0x1a2a6c,
+                side: THREE.BackSide
+            });
+            const sky = new THREE.Mesh(skyGeometry, skyMaterial);
+            scene.add(sky);
+            
+            // Position projectile at start
+            resetProjectilePosition();
+            
+            // Handle window resize
+            window.addEventListener('resize', onWindowResize);
+            
+            // Start animation loop
+            animateScene();
+        }
+        
+        function createLauncher() {
+            // Create launcher base
+            const baseGeometry = new THREE.CylinderGeometry(0.5, 0.5, 0.2, 32);
+            const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+            const base = new THREE.Mesh(baseGeometry, baseMaterial);
+            base.position.set(0, 0.1, 0);
+            scene.add(base);
+            
+            // Create launcher barrel
+            const barrelGeometry = new THREE.CylinderGeometry(0.1, 0.1, 2, 32);
+            const barrelMaterial = new THREE.MeshStandardMaterial({ color: 0x666666 });
+            const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
+            barrel.position.set(0, 1, 0);
+            barrel.rotation.z = -Math.PI / 2;
+            scene.add(barrel);
+            
+            // Create launcher stand
+            const standGeometry = new THREE.BoxGeometry(0.1, 1.8, 0.1);
+            const standMaterial = new THREE.MeshStandardMaterial({ color: 0x444444 });
+            const stand1 = new THREE.Mesh(standGeometry, standMaterial);
+            stand1.position.set(-0.3, 0.9, 0);
+            scene.add(stand1);
+            
+            const stand2 = new THREE.Mesh(standGeometry, standMaterial);
+            stand2.position.set(0.3, 0.9, 0);
+            scene.add(stand2);
+        }
+        
+        function resetProjectilePosition() {
+            projectile.position.set(0, params.height, 0);
+            updateTrajectoryLine();
+        }
+        
+        function updateTrajectoryLine() {
+            const points = [];
+            
+            // Calculate trajectory points
+            const radians = params.angle * Math.PI / 180;
+            let vx = params.velocity * Math.cos(radians);
+            let vy = params.velocity * Math.sin(radians);
+            let x = 0;
+            let y = params.height;
+            
+            const k = params.airResistance ? 
+                0.5 * AIR_DENSITY * DRAG_COEFFICIENT * CROSS_SECTIONAL_AREA : 0;
+            
+            points.push(new THREE.Vector3(x, y, 0));
+            
+            while (y > 0) {
+                const speed = Math.sqrt(vx*vx + vy*vy);
+                const drag = k * speed * speed;
+                
+                const ax = -drag * (vx / speed) / 1.0 + params.wind;
+                const ay = -params.gravity - drag * (vy / speed) / 1.0;
+                
+                vx += ax * TIME_STEP;
+                vy += ay * TIME_STEP;
+                
+                x += vx * TIME_STEP;
+                y += vy * TIME_STEP;
+                
+                points.push(new THREE.Vector3(x, y, 0));
+                
+                if (points.length > 1000) break;
+            }
+            
+            // Update trajectory line
+            const trajectoryGeometry = new THREE.BufferGeometry().setFromPoints(points);
+            trajectoryLine.geometry = trajectoryGeometry;
+        }
+        
+        function onWindowResize() {
+            const container = document.getElementById('vr-container');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+        
+        function renderScene() {
+            if (isRunning && trajectory.length > 0 && currentFrame < trajectory.length) {
+                const point = trajectory[currentFrame];
+                projectile.position.set(point.x, point.y, 0);
+                
+                // Update info panel
+                const speed = Math.sqrt(point.vx*point.vx + point.vy*point.vy);
+                updateInfoPanel(currentFrame * TIME_STEP, point.y, point.x, speed);
+                
+                currentFrame++;
+            }
+            
+            if (!isInVR) {
+                controls.update();
+            }
+            
+            renderer.render(scene, camera);
+        }
+        
+        function animateScene() {
+            if (renderer.xr.isPresenting) {
+                // Use XR animation loop when in VR
+                renderer.setAnimationLoop(renderScene);
+            } else {
+                // Use regular animation loop when not in VR
+                requestAnimationFrame(animateScene);
+                renderScene();
+            }
+        }
+        
+        // Create full VR UI panel with parameter controls
+        function createVRUI() {
+            // Create container for VR UI
+            vrUIContainer = new THREE.Group();
+            scene.add(vrUIContainer);
+            
+            // Position UI in front of the camera
+            vrUIContainer.position.set(0, 1.5, -2);
+            
+            // Create panel background
+            const panelGeometry = new THREE.PlaneGeometry(4, 4.5);
+            const panelMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0x1a2a6c,
+                transparent: true,
+                opacity: 0.8,
+                side: THREE.DoubleSide
+            });
+            const panel = new THREE.Mesh(panelGeometry, panelMaterial);
+            vrUIContainer.add(panel);
+            
+            // Create title
+            const loader = new THREE.FontLoader();
+            loader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', function(font) {
+                const titleMaterial = new THREE.MeshBasicMaterial({ color: 0xff8a00 });
+                const titleGeo = new THREE.TextGeometry('VR Controls', {
+                    font: font,
+                    size: 0.15,
+                    height: 0.01
+                });
+                const title = new THREE.Mesh(titleGeo, titleMaterial);
+                title.position.set(-1.2, 1.7, 0.1);
+                vrUIContainer.add(title);
+                
+                // Create slider labels
+                const labelMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                
+                // Velocity
+                const velLabelGeo = new THREE.TextGeometry('Velocity: ' + params.velocity + ' m/s', {
+                    font: font,
+                    size: 0.08,
+                    height: 0.01
+                });
+                const velLabel = new THREE.Mesh(velLabelGeo, labelMaterial);
+                velLabel.position.set(-1.7, 1.1, 0.1);
+                velLabel.userData = { type: 'label', param: 'velocity' };
+                vrUIContainer.add(velLabel);
+                
+                // Velocity adjustment buttons
+                const velDown = createButton('-', -1.7, 0.9, 'velocity', -1);
+                const velUp = createButton('+', -1.1, 0.9, 'velocity', 1);
+                
+                // Angle
+                const angleLabelGeo = new THREE.TextGeometry('Angle: ' + params.angle + '°', {
+                    font: font,
+                    size: 0.08,
+                    height: 0.01
+                });
+                const angleLabel = new THREE.Mesh(angleLabelGeo, labelMaterial);
+                angleLabel.position.set(-1.7, 0.6, 0.1);
+                angleLabel.userData = { type: 'label', param: 'angle' };
+                vrUIContainer.add(angleLabel);
+                
+                // Angle adjustment buttons
+                const angleDown = createButton('-', -1.7, 0.4, 'angle', -1);
+                const angleUp = createButton('+', -1.1, 0.4, 'angle', 1);
+                
+                // Height
+                const heightLabelGeo = new THREE.TextGeometry('Height: ' + params.height + ' m', {
+                    font: font,
+                    size: 0.08,
+                    height: 0.01
+                });
+                const heightLabel = new THREE.Mesh(heightLabelGeo, labelMaterial);
+                heightLabel.position.set(-1.7, 0.1, 0.1);
+                heightLabel.userData = { type: 'label', param: 'height' };
+                vrUIContainer.add(heightLabel);
+                
+                // Height adjustment buttons
+                const heightDown = createButton('-', -1.7, -0.1, 'height', -0.5);
+                const heightUp = createButton('+', -1.1, -0.1, 'height', 0.5);
+                
+                // Gravity
+                const gravityLabelGeo = new THREE.TextGeometry('Gravity: ' + params.gravity.toFixed(2) + ' m/s²', {
+                    font: font,
+                    size: 0.08,
+                    height: 0.01
+                });
+                const gravityLabel = new THREE.Mesh(gravityLabelGeo, labelMaterial);
+                gravityLabel.position.set(-1.7, -0.4, 0.1);
+                gravityLabel.userData = { type: 'label', param: 'gravity' };
+                vrUIContainer.add(gravityLabel);
+                
+                // Gravity adjustment buttons
+                const gravityDown = createButton('-', -1.7, -0.6, 'gravity', -0.1);
+                const gravityUp = createButton('+', -1.1, -0.6, 'gravity', 0.1);
+                
+                // Wind
+                const windLabelGeo = new THREE.TextGeometry('Wind: ' + params.wind.toFixed(1) + ' m/s', {
+                    font: font,
+                    size: 0.08,
+                    height: 0.01
+                });
+                const windLabel = new THREE.Mesh(windLabelGeo, labelMaterial);
+                windLabel.position.set(-1.7, -0.9, 0.1);
+                windLabel.userData = { type: 'label', param: 'wind' };
+                vrUIContainer.add(windLabel);
+                
+                // Wind adjustment buttons
+                const windDown = createButton('-', -1.7, -1.1, 'wind', -0.5);
+                const windUp = createButton('+', -1.1, -1.1, 'wind', 0.5);
+                
+                // Air resistance
+                const airResLabelGeo = new THREE.TextGeometry('Air Resistance: ' + (params.airResistance ? 'On' : 'Off'), {
+                    font: font,
+                    size: 0.08,
+                    height: 0.01
+                });
+                const airResLabel = new THREE.Mesh(airResLabelGeo, labelMaterial);
+                airResLabel.position.set(-1.7, -1.4, 0.1);
+                airResLabel.userData = { type: 'label', param: 'airRes' };
+                vrUIContainer.add(airResLabel);
+                
+                // Air resistance toggle button
+                const airResButton = createButton('Toggle', -1.1, -1.4, 'airResToggle');
+                
+                // Create buttons
+                const buttonGeometry = new THREE.BoxGeometry(0.8, 0.2, 0.05);
+                const buttonMaterial = new THREE.MeshBasicMaterial({ color: 0xff8a00 });
+                
+                // Launch button
+                const launchButton = new THREE.Mesh(buttonGeometry, buttonMaterial);
+                launchButton.position.set(0.8, -1.6, 0.05);
+                launchButton.userData = { action: 'launch' };
+                vrUIContainer.add(launchButton);
+                
+                // Reset button
+                const resetButton = new THREE.Mesh(buttonGeometry, buttonMaterial);
+                resetButton.position.set(0.8, -1.9, 0.05);
+                resetButton.userData = { action: 'reset' };
+                vrUIContainer.add(resetButton);
+                
+                // Add button labels
+                const launchTextGeo = new THREE.TextGeometry('Launch Projectile', {
+                    font: font,
+                    size: 0.07,
+                    height: 0.01
+                });
+                const launchText = new THREE.Mesh(launchTextGeo, labelMaterial);
+                launchText.position.set(0.2, -1.62, 0.1);
+                vrUIContainer.add(launchText);
+                
+                const resetTextGeo = new THREE.TextGeometry('Reset Simulation', {
+                    font: font,
+                    size: 0.07,
+                    height: 0.01
+                });
+                const resetText = new THREE.Mesh(resetTextGeo, labelMaterial);
+                resetText.position.set(0.25, -1.92, 0.1);
+                vrUIContainer.add(resetText);
+            });
+        }
+        
+        // Helper function to create adjustment buttons
+        function createButton(label, x, y, param, step = 0) {
+            const loader = new THREE.FontLoader();
+            const buttonGeometry = new THREE.BoxGeometry(0.4, 0.15, 0.05);
+            const buttonMaterial = new THREE.MeshBasicMaterial({ color: 0xff8a00 });
+            const button = new THREE.Mesh(buttonGeometry, buttonMaterial);
+            button.position.set(x, y, 0.05);
+            button.userData = { param: param, step: step };
+            vrUIContainer.add(button);
+            
+            // Button label
+            loader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', function(font) {
+                const labelMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                const textGeo = new THREE.TextGeometry(label, {
+                    font: font,
+                    size: 0.07,
+                    height: 0.01
+                });
+                const text = new THREE.Mesh(textGeo, labelMaterial);
+                text.position.set(x - 0.1, y - 0.05, 0.1);
+                vrUIContainer.add(text);
+            });
+            
+            return button;
+        }
+        
+        // Update VR UI labels
+        function updateVRUI() {
+            if (!vrUIContainer) return;
+            
+            vrUIContainer.children.forEach(child => {
+                if (child.userData && child.userData.type === 'label') {
+                    const param = child.userData.param;
+                    let text = '';
+                    
+                    switch(param) {
+                        case 'velocity':
+                            text = 'Velocity: ' + params.velocity + ' m/s';
+                            break;
+                        case 'angle':
+                            text = 'Angle: ' + params.angle + '°';
+                            break;
+                        case 'height':
+                            text = 'Height: ' + params.height + ' m';
+                            break;
+                        case 'gravity':
+                            text = 'Gravity: ' + params.gravity.toFixed(2) + ' m/s²';
+                            break;
+                        case 'wind':
+                            text = 'Wind: ' + params.wind.toFixed(1) + ' m/s';
+                            break;
+                        case 'airRes':
+                            text = 'Air Resistance: ' + (params.airResistance ? 'On' : 'Off');
+                            break;
+                    }
+                    
+                    // Update geometry with new text
+                    const loader = new THREE.FontLoader();
+                    loader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', function(font) {
+                        const geometry = new THREE.TextGeometry(text, {
+                            font: font,
+                            size: 0.08,
+                            height: 0.01
+                        });
+                        child.geometry = geometry;
+                    });
+                }
+            });
+        }
+        
+        // Setup VR controllers
+        function setupControllers() {
+            // Create controller models
+            controller1 = renderer.xr.getController(0);
+            scene.add(controller1);
+            
+            controller2 = renderer.xr.getController(1);
+            scene.add(controller2);
+            
+            // Create controller grips
+            controllerGrip1 = renderer.xr.getControllerGrip(0);
+            controllerGrip2 = renderer.xr.getControllerGrip(1);
+            scene.add(controllerGrip1);
+            scene.add(controllerGrip2);
+            
+            // Create controller lines
+            const controllerLineGeometry = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(0, 0, 0),
+                new THREE.Vector3(0, 0, -1)
+            ]);
+            
+            const controllerLineMaterial = new THREE.LineBasicMaterial({
+                color: 0xffffff,
+                linewidth: 2,
+                transparent: true,
+                opacity: 0.8
+            });
+            
+            const line1 = new THREE.Line(controllerLineGeometry, controllerLineMaterial);
+            line1.scale.z = 5;
+            controller1.add(line1);
+            
+            const line2 = new THREE.Line(controllerLineGeometry, controllerLineMaterial);
+            line2.scale.z = 5;
+            controller2.add(line2);
+            
+            // Add select event listeners
+            controller1.addEventListener('selectstart', onSelectStart);
+            controller1.addEventListener('selectend', onSelectEnd);
+            
+            controller2.addEventListener('selectstart', onSelectStart);
+            controller2.addEventListener('selectend', onSelectEnd);
+            
+            // Add movement controls
+            controller1.addEventListener('thumbstickchange', onThumbstickChange);
+            controller2.addEventListener('thumbstickchange', onThumbstickChange);
+            
+            vrControllers = [controller1, controller2];
+        }
+        
+        function onThumbstickChange(event) {
+            if (!isInVR) return;
+            
+            const controller = event.target;
+            const xAxis = event.axis[0];
+            const yAxis = event.axis[1];
+            
+            // Only move if thumbstick is pushed significantly
+            if (Math.abs(xAxis) > 0.1 || Math.abs(yAxis) > 0.1) {
+                // Get the direction of the headset for forward movement
+                const headDirection = new THREE.Vector3(0, 0, -1);
+                headDirection.applyQuaternion(camera.quaternion);
+                headDirection.y = 0; // Keep movement horizontal
+                headDirection.normalize();
+                
+                // Move forward/backward based on thumbstick Y axis
+                const forwardMovement = headDirection.clone();
+                forwardMovement.multiplyScalar(yAxis * moveSpeed);
+                
+                // Strafe left/right based on thumbstick X axis
+                const strafeDirection = new THREE.Vector3();
+                camera.getWorldDirection(strafeDirection);
+                const strafe = new THREE.Vector3(-strafeDirection.z, 0, strafeDirection.x).normalize();
+                strafe.multiplyScalar(xAxis * moveSpeed);
+                
+                // Apply movement to camera
+                camera.position.add(forwardMovement);
+                camera.position.add(strafe);
+            }
+        }
+        
+        function onSelectStart(event) {
+            const controller = event.target;
+            
+            // Create a raycaster to detect UI elements
+            const tempMatrix = new THREE.Matrix4();
+            tempMatrix.identity().extractRotation(controller.matrixWorld);
+            
+            const raycaster = new THREE.Raycaster();
+            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+            
+            // Check for intersections with UI elements
+            const intersects = raycaster.intersectObjects(vrUIContainer.children);
+            
+            if (intersects.length > 0) {
+                const object = intersects[0].object;
+                
+                // Handle button press
+                if (object.userData && object.userData.action === 'launch') {
+                    runSimulation();
+                    object.material.color.set(0x00ff00); // Green feedback
+                } else if (object.userData && object.userData.action === 'reset') {
+                    resetSimulation();
+                    object.material.color.set(0x00ff00); // Green feedback
+                } 
+                // Handle parameter adjustment buttons
+                else if (object.userData && object.userData.param) {
+                    const param = object.userData.param;
+                    const step = object.userData.step || 0;
+                    
+                    // Toggle air resistance
+                    if (param === 'airResToggle') {
+                        params.airResistance = !params.airResistance;
+                        airResToggle.checked = params.airResistance;
+                        updateValueDisplays();
+                        updateTrajectoryLine();
+                        object.material.color.set(0x00ff00); // Green feedback
+                    } 
+                    // Adjust numerical parameters
+                    else {
+                        switch(param) {
+                            case 'velocity':
+                                params.velocity = Math.max(5, Math.min(50, params.velocity + step));
+                                velocitySlider.value = params.velocity;
+                                break;
+                            case 'angle':
+                                params.angle = Math.max(0, Math.min(90, params.angle + step));
+                                angleSlider.value = params.angle;
+                                break;
+                            case 'height':
+                                params.height = Math.max(0, Math.min(50, params.height + step));
+                                heightSlider.value = params.height;
+                                break;
+                            case 'gravity':
+                                params.gravity = Math.max(1, Math.min(20, params.gravity + step));
+                                gravitySlider.value = params.gravity;
+                                break;
+                            case 'wind':
+                                params.wind = Math.max(-10, Math.min(10, params.wind + step));
+                                windSlider.value = params.wind;
+                                break;
+                        }
+                        updateValueDisplays();
+                        updateTrajectoryLine();
+                        object.material.color.set(0x00ff00); // Green feedback
+                    }
+                }
+            }
+        }
+        
+        function onSelectEnd(event) {
+            // Reset button colors
+            if (vrUIContainer) {
+                vrUIContainer.children.forEach(child => {
+                    if (child.material && child.material.color) {
+                        child.material.color.set(0xff8a00);
+                    }
+                });
+            }
+        }
+        
+        // Calculate trajectory
+        function calculateTrajectory() {
+            const trajectoryPoints = [];
+            let maxHeight = 0;
+            
+            // Initial conditions
+            const radians = params.angle * Math.PI / 180;
+            let vx = params.velocity * Math.cos(radians);
+            let vy = params.velocity * Math.sin(radians);
+            let x = 0;
+            let y = params.height;
+            
+            // Calculate drag coefficient
+            const k = params.airResistance ? 
+                0.5 * AIR_DENSITY * DRAG_COEFFICIENT * CROSS_SECTIONAL_AREA : 0;
+            
+            // Store initial point
+            trajectoryPoints.push({x, y, vx, vy});
+            
+            // Simulate until hitting the ground
+            while (y > 0) {
+                // Calculate drag force
+                const speed = Math.sqrt(vx*vx + vy*vy);
+                const drag = k * speed * speed;
+                
+                // Calculate acceleration (F = ma)
+                const ax = -drag * (vx / speed) / 1.0 + params.wind;
+                const ay = -params.gravity - drag * (vy / speed) / 1.0;
+                
+                // Update velocity
+                vx += ax * TIME_STEP;
+                vy += ay * TIME_STEP;
+                
+                // Update position
+                x += vx * TIME_STEP;
+                y += vy * TIME_STEP;
+                
+                // Track max height
+                if (y > maxHeight) maxHeight = y;
+                
+                // Store point
+                trajectoryPoints.push({x, y, vx, vy});
+                
+                // Safety break
+                if (trajectoryPoints.length > 1000) break;
+            }
+            
+            return {points: trajectoryPoints, maxHeight};
+        }
+        
+        // Update value displays
+        function updateValueDisplays() {
+            document.getElementById('velValue').textContent = params.velocity + ' m/s';
+            document.getElementById('angleValue').textContent = params.angle + '°';
+            document.getElementById('heightValue').textContent = params.height + ' m';
+            document.getElementById('gravityValue').textContent = params.gravity.toFixed(2) + ' m/s²';
+            document.getElementById('windValue').textContent = params.wind.toFixed(1) + ' m/s';
+            
+            // Update VR UI if in VR
+            if (isInVR) {
+                updateVRUI();
+            }
+        }
+        
+        // Update results display
+        function updateResultsDisplay() {
+            document.getElementById('maxHeight').textContent = results.maxHeight.toFixed(1) + ' m';
+            document.getElementById('distance').textContent = results.distance.toFixed(1) + ' m';
+            document.getElementById('flightTime').textContent = results.flightTime.toFixed(1) + ' s';
+            document.getElementById('impactSpeed').textContent = results.impactSpeed.toFixed(1) + ' m/s';
+        }
+        
+        // Update info panel
+        function updateInfoPanel(time, height, distance, speed) {
+            document.getElementById('infoTime').textContent = time.toFixed(1) + 's';
+            document.getElementById('infoHeight').textContent = height.toFixed(1) + 'm';
+            document.getElementById('infoDistance').textContent = distance.toFixed(1) + 'm';
+            document.getElementById('infoSpeed').textContent = speed.toFixed(1) + 'm/s';
+        }
+        
+        // Run simulation
+        function runSimulation() {
+            if (isRunning) return;
+            
+            // Update parameters
+            params.velocity = parseInt(velocitySlider.value);
+            params.angle = parseInt(angleSlider.value);
+            params.height = parseFloat(heightSlider.value);
+            params.airResistance = airResToggle.checked;
+            params.gravity = parseFloat(gravitySlider.value);
+            params.wind = parseFloat(windSlider.value);
+            
+            // Update displays
+            updateValueDisplays();
+            updateTrajectoryLine();
+            
+            // Reset results
+            results.maxHeight = 0;
+            results.distance = 0;
+            results.flightTime = 0;
+            results.impactSpeed = 0;
+            
+            // Calculate trajectory
+            const trajectoryData = calculateTrajectory();
+            trajectory = trajectoryData.points;
+            
+            // Set initial state
+            currentFrame = 0;
+            isRunning = true;
+            runBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Running...';
+            
+            // Update results with final values
+            if (trajectory.length > 0) {
+                const lastPoint = trajectory[trajectory.length - 1];
+                results.distance = lastPoint.x;
+                results.impactSpeed = Math.sqrt(lastPoint.vx*lastPoint.vx + lastPoint.vy*lastPoint.vy);
+                results.flightTime = trajectory.length * TIME_STEP;
+                results.maxHeight = trajectoryData.maxHeight;
+            }
+            
+            updateResultsDisplay();
+        }
+        
+        // Reset parameters
+        function resetSimulation() {
+            // Reset parameters to defaults
+            params = {
+                velocity: 25,
+                angle: 45,
+                height: 1.5,
+                airResistance: true,
+                gravity: 9.81,
+                wind: 0.0
+            };
+            
+            // Reset UI controls
+            velocitySlider.value = params.velocity;
+            angleSlider.value = params.angle;
+            heightSlider.value = params.height;
+            airResToggle.checked = params.airResistance;
+            gravitySlider.value = params.gravity;
+            windSlider.value = params.wind;
+            
+            // Reset simulation state
+            trajectory = [];
+            isRunning = false;
+            currentFrame = 0;
+            runBtn.innerHTML = '<i class="fas fa-play"></i> Launch Projectile';
+            
+            // Reset projectile position
+            resetProjectilePosition();
+            
+            // Reset info panel
+            document.getElementById('infoTime').textContent = '0.0s';
+            document.getElementById('infoHeight').textContent = '0.0m';
+            document.getElementById('infoDistance').textContent = '0.0m';
+            document.getElementById('infoSpeed').textContent = '0.0m/s';
+            
+            // Update displays
+            updateValueDisplays();
+            updateResultsDisplay();
+        }
+        
+        async function toggleVR() {
+            if (isInVR) {
+                // Exit VR
+                if (vrSession) {
+                    await vrSession.end();
+                }
+            } else {
+                // Enter VR
+                try {
+                    // Request VR session
+                    const sessionInit = { 
+                        optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'] 
+                    };
+                    
+                    vrSession = await navigator.xr.requestSession('immersive-vr', sessionInit);
+                    await renderer.xr.setSession(vrSession);
+                    
+                    // Handle session end
+                    vrSession.addEventListener('end', () => {
+                        vrSession = null;
+                        isInVR = false;
+                        vrBtn.innerHTML = '<i class="fas fa-vr-cardboard"></i> Enter VR';
+                    });
+                } catch (err) {
+                    console.error('Error starting VR session', err);
+                    alert('Failed to start VR: ' + err.message);
+                }
+            }
+        }
+        
+        function resetView() {
+            camera.position.set(0, 5, 15);
+            camera.lookAt(0, 0, 0);
+        }
+        
+        // Event listeners
+        runBtn.addEventListener('click', runSimulation);
+        resetBtn.addEventListener('click', resetSimulation);
+        resetViewBtn.addEventListener('click', resetView);
+        
+        vrBtn.addEventListener('click', toggleVR);
+        
+        // Input event listeners
+        velocitySlider.addEventListener('input', function() {
+            params.velocity = parseInt(this.value);
+            updateValueDisplays();
+            updateTrajectoryLine();
+        });
+        
+        angleSlider.addEventListener('input', function() {
+            params.angle = parseInt(this.value);
+            updateValueDisplays();
+            updateTrajectoryLine();
+        });
+        
+        heightSlider.addEventListener('input', function() {
+            params.height = parseFloat(this.value);
+            updateValueDisplays();
+            updateTrajectoryLine();
+        });
+        
+        gravitySlider.addEventListener('input', function() {
+            params.gravity = parseFloat(this.value);
+            updateValueDisplays();
+            updateTrajectoryLine();
+        });
+        
+        windSlider.addEventListener('input', function() {
+            params.wind = parseFloat(this.value);
+            updateValueDisplays();
+            updateTrajectoryLine();
+        });
+        
+        airResToggle.addEventListener('change', function() {
+            params.airResistance = this.checked;
+            updateValueDisplays();
+            updateTrajectoryLine();
+        });
+        
+        // Initialization
+        window.addEventListener('load', function() {
+            initThreeScene();
+            updateValueDisplays();
+            updateResultsDisplay();
+            
+            // Check for WebXR support
+            if (!navigator.xr) {
+                vrBtn.disabled = true;
+                vrBtn.textContent = "WebXR not supported";
+            }
+            
+            // Check for Meta Quest
+            if (/Quest/.test(navigator.userAgent)) {
+                vrInstruction.innerHTML = "<h3>Welcome to Meta Quest 3!</h3><p>Use thumbstick to move around</p><p>Point and click on UI elements</p><p>Press trigger to launch projectile</p>";
+            }
+        });
+    </script>
+    
+    <!-- Font Awesome for icons -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+</body>
+</html>
