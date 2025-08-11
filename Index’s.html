@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Meta Quest VR — Locomotion Starter (No-Module Build)</title>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body { background: #0e0e12; color: #eaeaea; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"; }
+    #app { position: fixed; inset: 0; }
+    .hud {
+      position: fixed; left: 16px; bottom: 16px; z-index: 10;
+      background: rgba(20,20,24,.6); backdrop-filter: blur(6px);
+      border: 1px solid rgba(255,255,255,.08); border-radius: 12px;
+      padding: 10px 12px; line-height: 1.3; font-size: 13px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.25);
+      max-width: 420px;
+    }
+    .hud strong { color: #fff; }
+    .hud kbd { font: inherit; padding: 2px 6px; border-radius: 6px; border: 1px solid rgba(255,255,255,.15); background: rgba(255,255,255,.06); }
+    .topbar { position: fixed; top: 12px; left: 12px; right: 12px; z-index: 10; display:flex; gap:10px; align-items:center; justify-content: space-between; }
+    .badge { padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12); font-size:12px; }
+    canvas { display:block; }
+    .diag { margin-top: 6px; font-size: 12px; opacity: .95; }
+    .diag .ok { color: #7fe3a1; }
+    .diag .bad { color: #ff9b8a; }
+    .diag code { background: rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.15); padding: 1px 4px; border-radius: 4px; }
+    /* Prevent long-press context menu in mobile/Quest browser */
+    * { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <div class="topbar">
+    <div class="badge">Meta Quest VR • Locomotion</div>
+    <div class="badge">Stand on a clear area before entering VR</div>
+  </div>
+  <div class="hud">
+    <div><strong>How to use</strong></div>
+    <div>Tap <kbd>Enter VR</kbd> ➜ Use <strong>left thumbstick</strong> to move, <strong>right</strong> to snap-turn.</div>
+    <div>Outside VR: drag to orbit, wheel to zoom.</div>
+    <div class="diag" id="diag"></div>
+  </div>
+
+  <!-- THREE (No modules; globals only) -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/objects/Sky.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/webxr/VRButton.js"></script>
+
+  <script>
+  (function(){
+    // --- Basic diagnostics so we can quickly spot loading issues ---
+    const diagEl = document.getElementById('diag');
+    function mark(label, ok, extra="") {
+      const span = document.createElement('div');
+      span.innerHTML = `${label}: <span class="${ok?"ok":"bad"}">${ok?"ok":"missing"}</span> ${extra}`;
+      diagEl.appendChild(span);
+    }
+
+    mark('<code>THREE</code>', !!window.THREE);
+    mark('OrbitControls', !!(THREE && THREE.OrbitControls));
+    mark('Sky', !!(THREE && THREE.Sky));
+    mark('VRButton', !!window.VRButton);
+    mark('WebXR support', 'xr' in (navigator||{}));
+
+    if(!window.THREE || !window.VRButton){
+      diagEl.appendChild(document.createTextNode(' — If any of the above say "missing", check network/HTTPS and CDNs.'));
+      return; // stop early if core libs missing
+    }
+
+    // --- Core ---
+    const app = document.getElementById('app');
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 1000);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.xr.enabled = true;
+    renderer.xr.setReferenceSpaceType('local-floor'); // match real floor height
+    renderer.shadowMap.enabled = true;
+    app.appendChild(renderer.domElement);
+
+    document.body.appendChild(VRButton.createButton(renderer));
+
+    // Player rig (move this, not the scene)
+    const player = new THREE.Group();
+    scene.add(player);
+    player.add(camera);
+
+    // Outside-VR camera start
+    camera.position.set(0, 1.6, 4);
+
+    // Only enable OrbitControls outside VR
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.target.set(0, 1.3, 0);
+
+    renderer.xr.addEventListener('sessionstart', () => { controls.enabled = false; });
+    renderer.xr.addEventListener('sessionend',   () => { controls.enabled = true;  });
+
+    // --- Lighting ---
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x404040, 0.6);
+    scene.add(hemi);
+
+    const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+    dir.position.set(5, 10, 7);
+    dir.castShadow = true;
+    dir.shadow.mapSize.set(1024, 1024);
+    scene.add(dir);
+
+    // --- Sky ---
+    const sky = new THREE.Sky();
+    sky.scale.setScalar(450000);
+    scene.add(sky);
+    const skyUniforms = sky.material.uniforms;
+    skyUniforms['turbidity'].value = 8;
+    skyUniforms['rayleigh'].value = 2;
+    skyUniforms['mieCoefficient'].value = 0.004;
+    skyUniforms['mieDirectionalG'].value = 0.8;
+    const sun = new THREE.Vector3();
+    const theta = Math.PI * 0.45, phi = 2 * Math.PI * 0.25; // afternoon-ish
+    sun.setFromSphericalCoords(1, theta, phi);
+    skyUniforms['sunPosition'].value.copy(sun);
+    dir.position.copy(sun).multiplyScalar(40);
+
+    // --- Ground (neutral, no grass) ---
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(400, 400),
+      new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 1.0, metalness: 0.0 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    const grid = new THREE.GridHelper(400, 160, 0x555555, 0x444444);
+    grid.position.y = 0.001; // avoid z-fighting
+    scene.add(grid);
+
+    // --- Simple environment props (optional) ---
+    function addTree(x, z, scale = 1) {
+      const group = new THREE.Group();
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.12*scale, 0.18*scale, 1.4*scale, 8), new THREE.MeshStandardMaterial({ color: 0x8b5a2b }));
+      trunk.position.y = 0.7*scale; trunk.castShadow = true; group.add(trunk);
+      const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.9*scale, 2.2*scale, 10), new THREE.MeshStandardMaterial({ color: 0x1f7a3f }));
+      leaf.position.y = 1.9*scale; leaf.castShadow = true; group.add(leaf);
+      group.position.set(x, 0, z);
+      scene.add(group);
+    }
+    [[12,10,1.2], [-9,14,1], [8,-12,1.1], [-14,-9,0.9], [18,-6,1.4]].forEach(([x,z,s])=>addTree(x,z,s));
+
+    // --- Controllers ---
+    const hands = [];
+    function setupControllers() {
+      const c0 = renderer.xr.getController(0); // usually left
+      const c1 = renderer.xr.getController(1); // usually right
+      player.add(c0); player.add(c1);
+
+      // Simple visual tips: small spheres as controller markers
+      const tipGeo = new THREE.SphereGeometry(0.02, 12, 12);
+      const matL = new THREE.MeshStandardMaterial({ color: 0x3aa3ff });
+      const matR = new THREE.MeshStandardMaterial({ color: 0xff7a3a });
+      const leftTip = new THREE.Mesh(tipGeo, matL); leftTip.castShadow = true; c0.add(leftTip);
+      const rightTip = new THREE.Mesh(tipGeo, matR); rightTip.castShadow = true; c1.add(rightTip);
+
+      // Optional: basic select feedback
+      function pulse(node) { node.scale.setScalar(1.8); setTimeout(()=>node.scale.setScalar(1), 120); }
+      c0.addEventListener('selectstart', () => pulse(leftTip));
+      c1.addEventListener('selectstart', () => pulse(rightTip));
+
+      hands.push(c0, c1);
+    }
+    setupControllers();
+
+    // --- Locomotion ---
+    const clock = new THREE.Clock();
+    const moveSpeed = 2.0; // m/s walking speed
+    const snapTurn = THREE.MathUtils.degToRad(30); // 30° snap
+    let turnCooldown = 0; // seconds
+
+    const up = new THREE.Vector3(0,1,0);
+    const vForward = new THREE.Vector3();
+    const vSide = new THREE.Vector3();
+
+    function pollInputs(dt) {
+      const session = renderer.xr.getSession();
+      if (!session) return;
+
+      // Reduce snap-turn cooldown
+      if (turnCooldown > 0) turnCooldown -= dt;
+
+      const xrCam = renderer.xr.getCamera(camera);
+
+      // For HUD diagnostics: show the first source axes
+      let axesMsg = '';
+
+      for (const src of session.inputSources) {
+        const gp = src && src.gamepad; if (!gp) continue;
+        const ax = gp.axes || [];
+
+        // Left stick assumed for movement (axes[0], axes[1])
+        // Right stick assumed for turning   (axes[2], axes[3])
+        const lx = ax[0] ?? 0, ly = ax[1] ?? 0; // strafe, forward/back
+        const rx = ax[2] ?? 0;                 // horizontal turn
+
+        if (!axesMsg) axesMsg = `axes: [${ax.map(v=>v.toFixed(2)).join(', ')}]`;
+
+        // Deadzones
+        const dz = 0.15;
+        const hasMove = Math.abs(lx) > dz || Math.abs(ly) > dz;
+        const hasTurn = Math.abs(rx) > 0.7; // stronger threshold for snap
+
+        if (hasMove) {
+          vForward.set(0,0,-1).applyQuaternion(xrCam.quaternion); vForward.y = 0; vForward.normalize();
+          vSide.copy(vForward).cross(up).normalize();
+          // -ly is forward, lx is strafe
+          player.position.addScaledVector(vForward, (-ly) * moveSpeed * dt);
+          player.position.addScaledVector(vSide,    ( lx) * moveSpeed * dt);
+        }
+
+        // Snap turning (right stick left/right)
+        if (hasTurn && turnCooldown <= 0) {
+          const dir = Math.sign(rx); // -1 left, +1 right
+          player.rotateOnWorldAxis(up, dir * snapTurn);
+          turnCooldown = 0.25; // 250ms between snaps
+        }
+      }
+
+      if (axesMsg) diagEl.dataset.axes = axesMsg; // store for display
+    }
+
+    // --- Resize ---
+    function onResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+    window.addEventListener('resize', onResize);
+
+    // --- Animate ---
+    renderer.setAnimationLoop(() => {
+      const dt = clock.getDelta();
+      if (renderer.xr.isPresenting) {
+        pollInputs(dt);
+        // Update diagnostics with live axes if present
+        const ax = diagEl.dataset.axes; if (ax) {
+          const row = document.getElementById('axesRow') || (()=>{ const r=document.createElement('div'); r.id='axesRow'; diagEl.appendChild(r); return r; })();
+          row.innerHTML = ax;
+        }
+      } else {
+        controls.update();
+      }
+      renderer.render(scene, camera);
+    });
+  })();
+  </script>
+</body>
+</html>
